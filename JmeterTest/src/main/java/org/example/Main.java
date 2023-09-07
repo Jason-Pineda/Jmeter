@@ -15,6 +15,7 @@ import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.control.gui.HttpTestSampleGui;
 import org.apache.jmeter.protocol.http.gui.HeaderPanel;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampler;
+import org.apache.jmeter.protocol.http.util.HTTPArgument;
 import org.apache.jmeter.reporters.ResultCollector;
 import org.apache.jmeter.reporters.Summariser;
 import org.apache.jmeter.samplers.SampleSaveConfiguration;
@@ -43,6 +44,17 @@ public class Main {
         // Create a new hash tree to hold our test elements
         HashTree testPlanTree = new HashTree();
 
+        // Create Header Manager
+        HeaderManager manager = new HeaderManager();
+        manager.add(new Header("Content-Type", "application/json"));
+        manager.setName(JMeterUtils.getResString("header_manager_title")); // $NON-NLS-1$
+        manager.setProperty(TestElement.TEST_CLASS, HeaderManager.class.getName());
+        manager.setProperty(TestElement.GUI_CLASS, HeaderPanel.class.getName());
+
+        String jsonData = "{ \"username\": \"your_username\", \"password\": \"your_password?\", \"twoFactorCode\": \"\", \"twoFactorRecoveryCode\" : \"\"}";
+        HTTPArgument arg =new HTTPArgument("", jsonData, null, true);
+        arg.setAlwaysEncoded(false);
+
         // Create a sampler
         HTTPSampler httpSamplerOne = new HTTPSampler();
         httpSamplerOne.setDomain("localhost");
@@ -51,8 +63,16 @@ public class Main {
         httpSamplerOne.setMethod("POST");
         httpSamplerOne.setName("HTTP Request One");
         httpSamplerOne.setProtocol("https");
+        httpSamplerOne.getArguments().addArgument(arg);
         httpSamplerOne.setProperty(TestElement.TEST_CLASS, HTTPSampler.class.getName());
         httpSamplerOne.setProperty(TestElement.GUI_CLASS, HttpTestSampleGui.class.getName());
+
+        // Create Header Manager
+        HeaderManager managerTwo = new HeaderManager();
+        managerTwo.add(new Header("Authorization", "Bearer ${auth_token}"));
+        managerTwo.setName(JMeterUtils.getResString("header_manager_title")); // $NON-NLS-1$
+        managerTwo.setProperty(TestElement.TEST_CLASS, HeaderManager.class.getName());
+        managerTwo.setProperty(TestElement.GUI_CLASS, HeaderPanel.class.getName());
 
         // Create another sampler
         HTTPSampler httpSamplerTwo = new HTTPSampler();
@@ -73,13 +93,6 @@ public class Main {
         jsonExtractor.setProperty(TestElement.TEST_CLASS, JSONPostProcessor.class.getName());
         jsonExtractor.setProperty(TestElement.GUI_CLASS, JSONPostProcessorGui.class.getName());
 
-        //Header Manager
-        HeaderManager manager = new HeaderManager();
-        manager.add(new Header("content-type", "application/json"));
-        manager.setName(JMeterUtils.getResString("header_manager_title")); // $NON-NLS-1$
-        manager.setProperty(TestElement.TEST_CLASS, HeaderManager.class.getName());
-        manager.setProperty(TestElement.GUI_CLASS, HeaderPanel.class.getName());
-
         // Response Assertion
         ResponseAssertion ra = new ResponseAssertion();
         ra.setProperty(TestElement.GUI_CLASS, AssertionGui.class.getName());
@@ -90,7 +103,7 @@ public class Main {
 
         // Create a loop controller
         LoopController loopController = new LoopController();
-        loopController.setLoops(10);
+        loopController.setLoops(20);
         loopController.setFirst(true);
         loopController.setProperty(TestElement.TEST_CLASS, LoopController.class.getName());
         loopController.setProperty(TestElement.GUI_CLASS, LoopControlPanel.class.getName());
@@ -114,17 +127,24 @@ public class Main {
         // Add the test plan to our hash tree, this is the top level of our test
         testPlanTree.add(testPlan);
 
-        // Create another hash tree and add the thread group to our test plan
-        HashTree threadGroupHashTree = testPlanTree.add(testPlan, threadGroup);
+        // HTTP Request Sampler and Header Manager
+        HashTree requestHashTree = new HashTree();
+        requestHashTree.add(httpSamplerOne, manager);
+        requestHashTree.add(httpSamplerOne, jsonExtractor);
+        requestHashTree.add(httpSamplerOne, ra);
 
-        // Create a hash tree to add the post processor to
-        HashTree httpSamplerOneTree = new HashTree();
-        httpSamplerOneTree.add(httpSamplerOne, jsonExtractor);
-        httpSamplerOneTree.add(httpSamplerOne, ra);
+        // HTTP Request Sampler and Header Manager
+        HashTree requestHashTreeTwo = new HashTree();
+        requestHashTreeTwo.add(httpSamplerTwo, managerTwo);
+        requestHashTreeTwo.add(httpSamplerTwo, ra);
+
+        // Construct Test Plan from previously initialized elements
+        testPlanTree.add(testPlan);
+        HashTree threadGroupHashTree = testPlanTree.add(testPlan, threadGroup);
+        threadGroupHashTree.add(requestHashTree);
 
         // Add the http sampler to the hash tree that contains the thread group
-        threadGroupHashTree.add(httpSamplerOneTree);
-        threadGroupHashTree.add(httpSamplerTwo);
+        threadGroupHashTree.add(requestHashTreeTwo);
 
         // Build a Jmeter test after execution
         SaveService.saveTree(testPlanTree, new FileOutputStream(jmeterHome + "/bin/FirstTest.jmx"));
